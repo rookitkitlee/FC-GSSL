@@ -1,0 +1,211 @@
+import os
+import random
+import torch
+import torch.nn as nn
+import numpy as np
+import scipy
+import scipy.stats as st
+
+from torch_geometric.utils import to_scipy_sparse_matrix, to_undirected, degree
+from ogb.nodeproppred.dataset_pyg import PygNodePropPredDataset
+from torch_geometric.utils import get_laplacian
+from torch_geometric.transforms import ToUndirected
+import scipy as sp
+import scipy.sparse as sps
+import time
+from scipy.io import loadmat
+from collections import Counter
+from torch_geometric.datasets import WikipediaNetwork
+from torch_geometric.transforms import NormalizeFeatures
+from torch_geometric.datasets import Actor
+from torch_geometric.utils import to_undirected
+from torch_geometric.data import Data
+from sklearn.preprocessing import StandardScaler
+from torch_geometric.utils import degree
+
+np.set_printoptions(precision=2, floatmode='fixed')  # 'fixed' 强制显示 2 位小数
+
+def load_blog(path="../dataset/"):
+    dataset = "blog"
+    # print('Loading {} dataset...'.format(dataset))
+    adj = sps.load_npz(path+dataset+"/adj.npz")
+    features = sps.load_npz(path+dataset+"/feat.npz")
+    labels = np.load(path+dataset+"/label.npy")
+    idx_train20 = np.load(path+dataset+"/train20.npy")
+    idx_val = np.load(path+dataset+"/val.npy")
+    idx_test = np.load(path+dataset+"/test.npy")
+
+
+    adj = adj.todense()
+
+
+    row, col = np.where(adj != 0)
+    edge_index = torch.tensor([row, col], dtype=torch.long)
+    x = torch.tensor(features.todense(), dtype=torch.float)
+    y = torch.tensor(labels, dtype=torch.int64)
+    data = Data(x=x, edge_index=edge_index, y=y)
+
+    num_nodes = x.size(0)  # Get the number of nodes in the dataset
+    train_mask = torch.zeros(num_nodes, dtype=torch.bool)
+    val_mask = torch.zeros(num_nodes, dtype=torch.bool)
+    test_mask = torch.zeros(num_nodes, dtype=torch.bool)
+    
+    train_mask[idx_train20] = 1
+    val_mask[idx_val] = 1  # Set the validation indices to 1
+    test_mask[idx_test] = 1  # Set the test indices to 1
+    data.train_mask = train_mask
+    data.val_mask = val_mask
+    data.test_mask = test_mask
+
+    return data
+
+
+
+# kitlee
+def get_origin_edge_lappacian(edge_index, num_nodes):
+
+    row, col = edge_index
+    deg = degree(row, num_nodes, dtype=torch.float)
+
+    # 计算对称归一化项 D^{-1/2}
+    deg_inv_sqrt = deg.pow(-0.5)
+    deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0
+
+    # 计算每条边的归一化权重 -1 / sqrt(deg[i] * deg[j])
+    norm = -deg_inv_sqrt[row] * deg_inv_sqrt[col]
+    return norm
+
+# kitlee
+def get_rebuild_edge_lappacian(e, u, edge_index):
+    
+    fe1 = u @ torch.diag(e)
+    fe2 = u
+    fe1 = fe1[edge_index[0]]
+    fe2 = fe2[edge_index[1]]
+    return torch.sum(torch.abs(fe1 * fe2), dim=1)
+    # return torch.sum(fe1 * fe2, dim=1)
+
+# # kitlee
+# def get_rebuild_edge_lappacian_val(e, u, edge_index):
+    
+#     fe1 = u @ torch.diag(e)
+#     fe2 = u
+#     fe1 = fe1[edge_index[0]]
+#     fe2 = fe2[edge_index[1]]
+#     return torch.sum(fe1 * fe2, dim=1)
+#     # return torch.abs(fe1 * fe2)
+
+
+def rank_array(arr):
+    # 获取排序后的索引
+    sorted_indices = np.argsort(arr)
+    # 创建排名数组
+    ranks = np.empty_like(sorted_indices)
+    ranks[sorted_indices] = np.arange(len(arr)) + 1  # 排名从1开始
+    
+    # 处理相同值的情况
+    unique_values, first_indices = np.unique(arr, return_index=True)
+    for val in unique_values:
+        mask = arr == val
+        ranks[mask] = ranks[mask].min()  # 相同值取最小排名
+    
+    return ranks
+
+## load blog
+data = load_blog()
+
+
+### load chameleon
+# dataset = WikipediaNetwork(root='../dataset/WikipediaNetwork', name='chameleon', transform=NormalizeFeatures())
+# data = dataset[0]
+
+
+# ### load squirrel
+# dataset = WikipediaNetwork(root='../dataset/WikipediaNetwork', name='squirrel', transform=NormalizeFeatures())
+# data = dataset[0]
+
+
+### load actor
+# dataset = Actor(root='../dataset/Actor', transform=NormalizeFeatures())
+# data = dataset[0]
+
+
+if data.is_directed():
+    print("is not undirected")
+    data.edge_index = to_undirected(data.edge_index)
+
+index, attr = get_laplacian(data.edge_index, normalization='sym')
+L = to_scipy_sparse_matrix(index, attr)
+
+L = torch.FloatTensor(L.todense())
+e, u = torch.linalg.eigh(L)
+
+# e, u = scipy.sparse.linalg.eigsh(L, k=800, which='SA', tol=1e-5)
+data.e = torch.FloatTensor(e)
+data.u = torch.FloatTensor(u)
+
+data.num_nodes = len(e)
+print('num_nodes:'+str(data.num_nodes))
+
+# 获取总的
+bl = 1000
+bs = int(len(e) / bl) + 1 
+rs = []
+for i in range(bl):
+    r = get_rebuild_edge_lappacian(e[bs*i:bs*(i+1)], u[:,bs*i:bs*(i+1)], data.edge_index).tolist()
+    rs.append(r)
+rs = np.array(rs)  # 10 * e
+rs = rs.T  # e * 10
+rs_total = np.sum(rs, axis=1)
+
+# 获取每一项
+rs_freq = np.array([0 for _ in range(len(data.edge_index[0]))])
+rs_temp = np.array([0 for _ in range(len(data.edge_index[0]))])
+for i in range(len(e)):
+    rp = get_rebuild_edge_lappacian(e[i:(i+1)], u[:,i:(i+1)], data.edge_index).tolist()
+
+    rs_temp = rs_temp + rp
+    rs_freq = rs_freq + rs_temp / rs_total
+
+edge_drop_pro = rs_freq / len(e)
+
+node_mask_pro = [0 for _ in range(data.num_nodes)]
+node_degree = [0 for _ in range(data.num_nodes)]
+for i in range(len(edge_drop_pro)):
+
+    node_degree[data.edge_index[0][i]] += 1
+    node_degree[data.edge_index[1][i]] += 1
+    edp = edge_drop_pro[i]
+    if edp > 0:
+        node_mask_pro[data.edge_index[0][i]] += edp
+        node_mask_pro[data.edge_index[1][i]] += edp
+       
+
+node_mask_pro = np.array(node_mask_pro)
+node_degree = np.array(node_degree)
+node_mask_pro = node_mask_pro / node_degree
+edge_drop_pro = np.array(edge_drop_pro)
+
+# node_mask_pro = np.log2(node_mask_pro)
+node_mask_pro[np.isnan(node_mask_pro)] = 0         # 替换 NaN
+node_mask_pro[np.isinf(node_mask_pro)] = 0         # 替换 inf
+node_mask_pro[node_mask_pro < 0] = 0               # 替换负数
+
+# 从这修改
+# edge_drop_pro = np.log2(edge_drop_pro)
+edge_drop_pro[np.isnan(edge_drop_pro)] = 0         # 替换 NaN
+edge_drop_pro[np.isinf(edge_drop_pro)] = 0         # 替换 inf
+edge_drop_pro[edge_drop_pro < 0] = 0               # 替换负数00001
+
+print(edge_drop_pro[1000:1100])
+print(node_mask_pro[1000:1100])
+
+
+data.edge_drop_pro = edge_drop_pro
+data.node_mask_pro = node_mask_pro
+
+data.edge_qua_drop_pro = rank_array(edge_drop_pro)
+data.node_qua_mask_pro = rank_array(node_mask_pro)
+
+
+torch.save(data, '../dataset/blog.pt')
