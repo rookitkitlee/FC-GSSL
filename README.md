@@ -45,7 +45,7 @@ For QM9, fownload from [MoleculeNet](https://moleculenet.org/datasets-1) and put
 
 ### Running
 
-(1) Move into `./qm9` and run `pretrain.py` to pre-train the encoder.
+(1) Move into `./qm9` directory, and then run `preprocess_1.py`, `preprocess_2.py`, and `pretrain.py` to pre-train the encoder.
 
 (2) Fine-tune the pre-trained encoder on QM9 by runing `tune_qm9.py`.
 
