@@ -1,0 +1,111 @@
+from os import path
+import numpy as np
+
+import scipy
+import torch
+from torch_geometric.data import Data
+from torch_geometric.utils import get_laplacian
+from torch_geometric.utils import to_scipy_sparse_matrix, to_undirected
+from torch_geometric.transforms import ToUndirected
+
+from ogb.nodeproppred.dataset_pyg import PygNodePropPredDataset
+
+# kitlee
+def get_rebuild_edge_lappacian(e, u, edge_index):
+    
+    fe1 = u @ torch.diag(e)
+    fe2 = u
+    fe1 = fe1[edge_index[0]]
+    fe2 = fe2[edge_index[1]]
+    return torch.sum(torch.abs(fe1 * fe2), dim=1)
+
+def rank_array(arr):
+    # 获取排序后的索引
+    sorted_indices = np.argsort(arr)
+    # 创建排名数组
+    ranks = np.empty_like(sorted_indices)
+    ranks[sorted_indices] = np.arange(len(arr)) + 1  # 排名从1开始
+    
+    # 处理相同值的情况
+    unique_values, first_indices = np.unique(arr, return_index=True)
+    for val in unique_values:
+        mask = arr == val
+        ranks[mask] = ranks[mask].min()  # 相同值取最小排名
+    
+    return ranks
+
+
+data = torch.load('../dataset/arxiv-year.pt')
+
+
+e = data.e
+u = data.u
+
+data.num_nodes = len(u)
+
+print('num_nodes:'+str(data.num_nodes))
+print(torch.max(data.edge_index[0]))
+print(torch.max(data.edge_index[1]))
+
+# 获取总的
+bl = 1000
+bs = 1
+rs = []
+for i in range(bl):
+    print('1:'+str(i))
+    r = get_rebuild_edge_lappacian(e[bs*i:bs*(i+1)], u[:,bs*i:bs*(i+1)], data.edge_index).tolist()
+    rs.append(r)
+rs = np.array(rs)  # 10 * e
+rs = rs.T  # e * 10
+rs_total = np.sum(rs, axis=1)
+
+
+rs_freq = np.array([0 for _ in range(len(data.edge_index[0]))])
+rs_temp = np.array([0 for _ in range(len(data.edge_index[0]))])
+for i in range(bl):
+    print('2:'+str(i))
+    rp = get_rebuild_edge_lappacian(e[bs*i:bs*(i+1)], u[:,bs*i:bs*(i+1)], data.edge_index).tolist()
+
+    rs_temp = rs_temp + rp
+    rs_freq = rs_freq + rs_temp / rs_total
+
+edge_drop_pro = rs_freq / len(e)
+
+node_mask_pro = [0 for _ in range(data.num_nodes)]
+node_degree = [0 for _ in range(data.num_nodes)]
+for i in range(len(edge_drop_pro)):
+
+    node_degree[data.edge_index[0][i]] += 1
+    node_degree[data.edge_index[1][i]] += 1
+    edp = edge_drop_pro[i]
+    if edp > 0:
+        node_mask_pro[data.edge_index[0][i]] += edp
+        node_mask_pro[data.edge_index[1][i]] += edp
+       
+
+node_mask_pro = np.array(node_mask_pro)
+node_degree = np.array(node_degree)
+node_mask_pro = node_mask_pro / node_degree
+edge_drop_pro = np.array(edge_drop_pro)
+
+# node_mask_pro = np.log2(node_mask_pro)
+node_mask_pro[np.isnan(node_mask_pro)] = 0         # 替换 NaN
+node_mask_pro[np.isinf(node_mask_pro)] = 0         # 替换 inf
+node_mask_pro[node_mask_pro < 0] = 0               # 替换负数
+
+# 从这修改
+# edge_drop_pro = np.log2(edge_drop_pro)
+edge_drop_pro[np.isnan(edge_drop_pro)] = 0         # 替换 NaN
+edge_drop_pro[np.isinf(edge_drop_pro)] = 0         # 替换 inf
+edge_drop_pro[edge_drop_pro < 0] = 0               # 替换负数00001
+
+# print(edge_drop_pro[1000:1100])
+# print(node_mask_pro[1000:1100])
+
+data.edge_drop_pro = edge_drop_pro
+data.node_mask_pro = node_mask_pro
+
+data.edge_qua_drop_pro = rank_array(edge_drop_pro)
+data.node_qua_mask_pro = rank_array(node_mask_pro)
+
+torch.save(data, '../dataset/arxiv-year.pt')
