@@ -32,10 +32,10 @@ For arXiv-year and Penn94, we adopt the same data splits as provided in the [Non
 ### Running
 (1) To preprocess the datasets, move into `./node` or `./node_batch` and run `preprocess.py`.
 
-(2) Train and evaluate GraphPAE for node classification by running `train_node.py` or `train_batch.py`.
+(2) Train and evaluate FC-GSSL for node classification by running `train_node.py` or `train_batch.py`.
 
 ## Graph Prediction
-Move into to `./ogbg` and run `train_graph.py` for graph prediction tasks.
+Move into to `./ogbg` directory, then run  `preprocess.py` and `train_graph.py` for graph prediction tasks.
 
 ## Transfer Learning
 ### Download Datasets
