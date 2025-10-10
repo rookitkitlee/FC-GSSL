@@ -7,7 +7,7 @@ num_workers: 0
 pooling: mean
 
 # # Training settings
-epochs: 20
+epochs: 40
 optim: adam
 init_lr: 0.001
 weight_decay: 0.0
