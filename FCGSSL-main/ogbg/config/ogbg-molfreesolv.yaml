@@ -8,7 +8,7 @@ pooling: sum
 
 # # Training settings
 # epochs: 60
-epochs: 100
+epochs: 40
 optim: adam
 # init_lr: 0.0002
 init_lr: 0.00002
@@ -21,7 +21,7 @@ mask_ratio: 0.5
 edge_drop: 0.25
 masked_atom_loss: 1.0
 masked_pe_loss: 0.01
-masked_ssl_loss: 0.0001
+masked_ssl_loss: 0.01
 ssl_sample: 256
 ssl_temp: 0.2
 atom_recon_type: sce
