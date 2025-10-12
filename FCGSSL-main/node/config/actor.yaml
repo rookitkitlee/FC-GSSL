@@ -18,7 +18,7 @@ epochs_eval: 5000
 
 # # Pretraining settings
 # mask_ratio: 0.25
-mask_ratio: 0.3 # 规范一下 参数
+mask_ratio: 0.3 
 replace_ratio: 0.0
 edge_drop: 0.3
 
