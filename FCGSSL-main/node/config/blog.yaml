@@ -18,8 +18,8 @@ wd_eval: 0.0001
 epochs_eval: 5000
 
 # # Pretraining settings
-# mask_ratio: 0.25  # 原先的
-mask_ratio: 0.3 # 规范化一下
+# mask_ratio: 0.25  
+mask_ratio: 0.3 
 replace_ratio: 0.2
 edge_drop: 0.3
 
