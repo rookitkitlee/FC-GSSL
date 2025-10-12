@@ -16,8 +16,8 @@ schedule_opt: none
 # # Pretraining settings
 mask_ratio: 0.4
 edge_drop: 0.4
-# mask_ratio: 0.5  # 格式统一一下
-# edge_drop: 0.5   # 格式统一一下
+# mask_ratio: 0.5  
+# edge_drop: 0.5 
 masked_atom_loss: 1.0
 # masked_pe_loss: 0.01
 masked_pe_loss: 0.01 # xx
